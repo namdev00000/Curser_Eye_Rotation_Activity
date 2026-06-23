@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cursor Eye Rotation & Interactive Audio Dots</title>
+    <style>
+        /* =========================================
+           SECTION 1: COLOR THEMES
+           These variables control the colors for the 
+           entire app. Changing a color here changes it everywhere.
+        ========================================= */
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --eye-bg: #ffffff;
+            --eye-border: #000000;
+            --pupil-color: #000000;
+            --inner-dot-color: #ffffff;
+            --button-bg: #f0f0f0;
+            --button-hover: #e0e0e0;
+        }
+
+        /* Dark Theme overrides the colors above */
+        body.theme-black {
+            --bg-color: #000000;
+            --text-color: #ffffff;
+            --eye-bg: #000000;
+            --eye-border: #ffffff;
+            --pupil-color: #ffffff;
+            --inner-dot-color: #000000;
+            --button-bg: #333333;
+            --button-hover: #555555;
+        }
+
+        /* =========================================
+           SECTION 2: BASE LAYOUT
+           This sets up the main screen to take up the full window.
+        ========================================= */
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: Arial, sans-serif;
+            transition: background-color 0.3s, color 0.3s; /* Smooth color changing */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* Hides scrollbars */
+            position: relative;
+        }
+
+        /* This is the background layer where dots are drawn */
+        #dotsCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1; /* Puts the canvas behind all buttons and eyes */
+            pointer-events: none; /* Allows mouse clicks to pass through to buttons */
+        }
+
+        /* =========================================
+           SECTION 3: WELCOME POP-UP (MODAL)
+           The styling for the name input screen when app opens.
+        ========================================= */
+        #welcomeModal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(8px); /* Blurs the background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100; /* Puts it on top of everything */
+            opacity: 1;
+            transition: opacity 0.5s ease;
+        }
+
+        .modal-content {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding: 40px 60px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+            border: 2px solid var(--text-color);
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 12px 15px;
+            font-size: 18px;
+            margin: 20px 0;
+            border: 2px solid var(--text-color);
+            border-radius: 8px;
+            background: var(--bg-color);
+            color: var(--text-color);
+            outline: none;
+            text-align: center;
+        }
+
+        .modal-btn {
+            padding: 12px 30px;
+            font-size: 18px;
+            cursor: pointer;
+            background-color: var(--text-color);
+            color: var(--bg-color);
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+
+        .modal-btn:hover {
+            transform: scale(1.05); /* Makes button slightly bigger on hover */
+        }
+
+        /* =========================================
+           SECTION 4: TOP NAVIGATION BAR
+           Controls the layout of the buttons at the top.
+        ========================================= */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 20px 40px;
+            z-index: 10;
+        }
+
+        .header-left, .header-right {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .header-left {
+            flex-direction: column;
+        }
+
+        /* The big greeting text in the top center */
+        #greetingDisplay {
+            position: absolute;
+            top: 25px;
+            left: 50%;
+            transform: translateX(-50%); /* Keeps it perfectly centered */
+            font-size: 38px;
+            font-weight: 900;
+            color: var(--text-color);
+            text-align: center;
+            z-index: 5;
+            white-space: nowrap;
+        }
+
+        /* =========================================
+           SECTION 5: BUTTON STYLES
+        ========================================= */
+        /* The main "Cursor Eye Rotation" button */
+        .main-button {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background-color: var(--text-color);
+            color: var(--bg-color);
+            padding: 10px 30px;
+            border-radius: 50px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            width: fit-content;
+            transition: transform 0.2s;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        
+        .main-button:hover { transform: scale(1.02); }
+        .main-button svg { width: 40px; height: 40px; fill: var(--bg-color); }
+
+        /* Normal text buttons (One Eye / Two Eyes) */
+        .controls { display: flex; gap: 10px; }
+        .control-btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: var(--button-bg);
+            color: var(--text-color);
+            border: 2px solid var(--text-color);
+            border-radius: 8px;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        .control-btn:hover { background-color: var(--button-hover); }
+
+        /* Small icon buttons on the right side */
+        .icon-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 10px;
+            position: relative; /* Needed for the tooltip popup */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .icon-btn svg {
+            width: 35px;
+            height: 35px;
+            fill: var(--text-color);
+            transition: transform 0.4s ease;
+        }
+
+        /* This creates the black popup text when you hover over an icon */
+        .icon-btn::after {
+            content: attr(data-tooltip); /* Grabs text from HTML */
+            position: absolute;
+            bottom: -30px;
+            right: 50%;
+            transform: translateX(50%);
+            background-color: var(--text-color);
+            color: var(--bg-color);
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            opacity: 0; /* Hidden by default */
+            pointer-events: none;
+            transition: opacity 0.2s, bottom 0.2s;
+            white-space: nowrap;
+            z-index: 20;
+        }
+
+        .icon-btn:hover svg { transform: scale(1.1); }
+        .icon-btn:hover::after {
+            opacity: 1; /* Shows tooltip on hover */
+            bottom: -40px;
+        }
+
+        /* =========================================
+           SECTION 6: THE EYE DESIGN
+        ========================================= */
+        .eye-container {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 40px; /* Space between two eyes */
+            z-index: 5;
+        }
+
+        .eye {
+            position: relative;
+            width: 250px;
+            height: 250px;
+            background-color: var(--eye-bg);
+            border: 6px solid var(--eye-border);
+            border-radius: 50%; /* Makes it a circle */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+
+        /* The main moving pupil */
+        .pupil {
+            position: absolute;
+            width: 90px;
+            height: 90px;
+            background-color: var(--pupil-color);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* The small dot inside the pupil */
+        .inner-dot {
+            position: absolute;
+            width: 25px;
+            height: 25px;
+            background-color: var(--inner-dot-color);
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body class="theme-black">
+
+    <div id="welcomeModal">
+        <div class="modal-content">
+            <h1>Welcome to Cursor Eye</h1>
+            <input type="text" id="nameInput" class="modal-input" placeholder="e.g. Namdev" autocomplete="off">
+            <button id="startBtn" class="modal-btn">Start Exploring</button>
+        </div>
+    </div>
+
+    <canvas id="dotsCanvas"></canvas>
+
+    <div id="greetingDisplay"></div>
+
+    <div class="top-bar">
+        <div class="header-left">
+            <div class="main-button" id="cursorEyeBtn">
+                <svg viewBox="0 0 24 24">
+                    <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                    <circle cx="9.5" cy="9.5" r="2"/>
+                </svg>
+                Cursor Eye Rotation
+            </div>
+            
+            <div class="controls">
+                <button class="control-btn" id="btnOneEye">One Eye</button>
+                <button class="control-btn" id="btnTwoEyes">Two Eyes</button>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <button class="icon-btn" id="btnPattern" data-tooltip="Pattern: Grid">
+                <svg viewBox="0 0 24 24">
+                    <path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z"/>
+                </svg>
+            </button>
+
+            <button class="icon-btn" id="btnSound" data-tooltip="Sound is OFF">
+                <svg id="icon-sound-off" viewBox="0 0 24 24">
+                    <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                </svg>
+                <svg id="icon-sound-on" viewBox="0 0 24 24" style="display: none;">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                </svg>
+            </button>
+
+            <button class="icon-btn" id="btnAnim" data-tooltip="Mode: Glow">
+                <svg viewBox="0 0 24 24">
+                    <path d="M19 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM10.56 16.48L9.22 13.62L6.36 12.28L9.22 10.94L10.56 8.08L11.9 10.94L14.76 12.28L11.9 13.62L10.56 16.48ZM16.03 9.53L15.36 8.1L13.93 7.43L15.36 6.76L16.03 5.33L16.7 6.76L18.13 7.43L16.7 8.1L16.03 9.53Z"/>
+                </svg>
+            </button>
+
+            <button class="icon-btn" id="btnTheme" data-tooltip="Change Theme">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22ZM12 20V4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20Z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="eye-container" id="eyeContainer"></div>
+
+    <script>
+        // --- 1. Memory / State ---
+        // This object remembers everything happening in the app right now.
+        const state = {
+            mouseX: window.innerWidth / 2, // Current X position of mouse
+            mouseY: window.innerHeight / 2, // Current Y position of mouse
+            prevMouseX: window.innerWidth / 2, // Previous X position (used for audio speed)
+            prevMouseY: window.innerHeight / 2, // Previous Y position
+            isHoveringMainButton: false, // Is the mouse currently over the main button?
+            isLockedAtCenter: false,     // Did the user click the main button to lock eyes?
+            eyesCount: 1,                // Currently showing 1 or 2 eyes?
+            themeIndex: 0,               
+            themes: ['theme-black', 'theme-white'],
+            animModes: ['glow', 'repel', 'off'],
+            animIndex: 0,
+            dotPattern: 'grid',          // Can be 'grid' or 'random'
+            soundEnabled: false
+        };
+
+        // --- 2. Custom Audio Engine ---
+        // This creates sound using math instead of downloading audio files.
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let lastActionSoundTime = 0;
+
+        // Plays a short "pop" when you click a button
+        function playClickSound() {
+            if (!state.soundEnabled) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.type = 'sine'; // Smooth sound wave
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.05); // Drops pitch quickly
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05); // Fades out quickly
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.05);
+        }
+
+        // Plays continuous sounds based on how fast the mouse is moving
+        function playActionSound(intensity) {
+            if (!state.soundEnabled || state.animModes[state.animIndex] === 'off') return;
+            
+            const now = audioCtx.currentTime;
+            // Prevent playing sound too often (limits to once every 0.15 seconds)
+            if (now - lastActionSoundTime < 0.15 || intensity < 2) return; 
+            lastActionSoundTime = now;
+
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            const mode = state.animModes[state.animIndex];
+            const vol = Math.min(intensity * 0.002, 0.02); // Keep volume very low and gentle
+
+            if (mode === 'glow') {
+                // High-pitched "shimmer" sound for Glow
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(1000 + (Math.random() * 400), now);
+                gain.gain.setValueAtTime(vol, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                osc.start();
+                osc.stop(now + 0.1);
+            } else if (mode === 'repel') {
+                // Low-pitched "whoosh" sound for Repel
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(250, now);
+                osc.frequency.linearRampToValueAtTime(150, now + 0.15);
+                gain.gain.setValueAtTime(vol * 1.5, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                osc.start();
+                osc.stop(now + 0.15);
+            }
+        }
+
+        // --- 3. Link HTML to Javascript ---
+        const welcomeModal = document.getElementById('welcomeModal');
+        const nameInput = document.getElementById('nameInput');
+        const startBtn = document.getElementById('startBtn');
+        const greetingDisplay = document.getElementById('greetingDisplay');
+        const eyeContainer = document.getElementById('eyeContainer');
+        
+        // Modal Logic: What happens when user clicks "Start Exploring"
+        startBtn.addEventListener('click', () => {
+            if (audioCtx.state === 'suspended') audioCtx.resume(); // Browsers require a click to allow sound
+            
+            const userName = nameInput.value.trim() || 'Namdev'; // Default name if empty
+            const hour = new Date().getHours();
+            let timeGreeting = '';
+
+            // Calculate time of day
+            if (hour < 12) timeGreeting = 'Good morning';
+            else if (hour < 17) timeGreeting = 'Good afternoon';
+            else if (hour < 21) timeGreeting = 'Good evening';
+            else timeGreeting = 'Good night';
+
+            greetingDisplay.textContent = `${timeGreeting}, ${userName}`;
+            
+            // Fade out the modal smoothly
+            welcomeModal.style.opacity = '0';
+            setTimeout(() => { welcomeModal.style.display = 'none'; }, 500);
+        });
+
+        // Allow pressing Enter key on keyboard to start
+        nameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startBtn.click();
+        });
+
+        // Grab all the buttons
+        const btnOneEye = document.getElementById('btnOneEye');
+        const btnTwoEyes = document.getElementById('btnTwoEyes');
+        const btnTheme = document.getElementById('btnTheme');
+        const btnAnim = document.getElementById('btnAnim');
+        const btnSound = document.getElementById('btnSound');
+        const btnPattern = document.getElementById('btnPattern');
+        const cursorEyeBtn = document.getElementById('cursorEyeBtn');
+        const iconSoundOn = document.getElementById('icon-sound-on');
+        const iconSoundOff = document.getElementById('icon-sound-off');
+
+        // Attach click sound to every button
+        [btnOneEye, btnTwoEyes, btnTheme, btnAnim, btnSound, btnPattern, cursorEyeBtn].forEach(btn => {
+            btn.addEventListener('mousedown', playClickSound);
+        });
+
+        // --- 4. Dot Background Logic ---
+        const canvas = document.getElementById('dotsCanvas');
+        const ctx = canvas.getContext('2d');
+        let dots = [];
+        
+        // This is the physical size of the dot. It was reduced by 20% to make them very fine.
+        const DOT_BASE_RADIUS = 0.3; 
+
+        // Fixes canvas size if the user resizes their browser window
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            initDots();
+        }
+
+        // Creates the list of dots based on the selected pattern
+        function initDots() {
+            dots = [];
+            if (state.dotPattern === 'grid') {
+                // Creates a perfectly symmetric grid
+                const spacing = 25; // Distance between dots
+                for (let x = 0; x < canvas.width; x += spacing) {
+                    for (let y = 0; y < canvas.height; y += spacing) {
+                        dots.push({ 
+                            baseX: x, baseY: y, x: x, y: y, 
+                            currentRadius: DOT_BASE_RADIUS, targetRadius: DOT_BASE_RADIUS 
+                        });
+                    }
+                }
+            } else {
+                // Creates random scattered stars
+                const numDots = Math.floor((canvas.width * canvas.height) / (25 * 25)); // Calculate total needed
+                for (let i = 0; i < numDots; i++) {
+                    const randomX = Math.random() * canvas.width;
+                    const randomY = Math.random() * canvas.height;
+                    dots.push({ 
+                        baseX: randomX, baseY: randomY, x: randomX, y: randomY, 
+                        currentRadius: DOT_BASE_RADIUS, targetRadius: DOT_BASE_RADIUS 
+                    });
+                }
+            }
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Creates the HTML elements for the eyes
+        function renderEyes() {
+            eyeContainer.innerHTML = '';
+            for (let i = 0; i < state.eyesCount; i++) {
+                const eye = document.createElement('div');
+                eye.className = 'eye';
+                eye.innerHTML = `<div class="pupil"><div class="inner-dot"></div></div>`;
+                eyeContainer.appendChild(eye);
+            }
+        }
+
+        // --- 5. The Master Animation Loop ---
+        // This function runs 60 times a second to update graphics
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Wipe canvas clean every frame
+            
+            const isDarkMode = document.body.classList.contains('theme-black');
+            const mode = state.animModes[state.animIndex];
+
+            // Calculate how fast the mouse is moving to determine audio intensity
+            const dx = state.mouseX - state.prevMouseX;
+            const dy = state.mouseY - state.prevMouseY;
+            const mouseSpeed = Math.sqrt(dx * dx + dy * dy);
+            playActionSound(mouseSpeed);
+            state.prevMouseX = state.mouseX;
+            state.prevMouseY = state.mouseY;
+
+            // --- Draw Every Single Dot ---
+            dots.forEach(dot => {
+                let drawColor = '';
+
+                // Calculate distance between this specific dot and the mouse cursor
+                const dist = Math.sqrt(Math.pow(dot.baseX - state.mouseX, 2) + Math.pow(dot.baseY - state.mouseY, 2));
+
+                if (mode === 'glow') {
+                    const glowRadius = 200; // How close mouse needs to be to affect dot
+
+                    if (dist < glowRadius) {
+                        const intensity = Math.pow(1 - (dist / glowRadius), 1.8); 
+                        // Grow dot slightly (Reduced by 20% along with base size)
+                        dot.targetRadius = DOT_BASE_RADIUS + (intensity * 1.2); 
+                        
+                        if (isDarkMode) {
+                            // DIAMOND GLOW
+                            const alpha = 0.2 + (intensity * 0.8);
+                            ctx.shadowBlur = intensity * 45; // Sharp blur
+                            ctx.shadowColor = `rgba(180, 230, 255, ${alpha})`; // Blueish ice light
+                            drawColor = `rgba(255, 255, 255, ${alpha + 0.5})`; // White core
+                        } else {
+                            // DARK DOT GLOW (White theme)
+                            const alpha = 0.4 + (intensity * 0.6); 
+                            ctx.shadowBlur = intensity * 15;
+                            ctx.shadowColor = `rgba(0, 0, 0, ${alpha})`;
+                            drawColor = `rgba(0, 0, 0, ${alpha + 0.3})`; 
+                        }
+                    } else {
+                        // Return dot to normal if mouse is far away
+                        dot.targetRadius = DOT_BASE_RADIUS;
+                        ctx.shadowBlur = 0; 
+                        drawColor = isDarkMode ? `rgba(255, 255, 255, 0.1)` : `rgba(0, 0, 0, 0.25)`;
+                    }
+
+                    // Apply smooth spring physics to size and position
+                    dot.currentRadius += (dot.targetRadius - dot.currentRadius) * 0.15;
+                    dot.x += (dot.baseX - dot.x) * 0.1;
+                    dot.y += (dot.baseY - dot.y) * 0.1;
+
+                    // Draw the circle on the canvas
+                    ctx.beginPath();
+                    ctx.arc(dot.x, dot.y, dot.currentRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = drawColor;
+                    ctx.fill();
+
+                } else if (mode === 'repel') {
+                    const repelRadius = 120; // How far the mouse pushes dots
+
+                    if (dist < repelRadius && dist > 0) {
+                        // Calculate physics to push the dot away from cursor
+                        const force = (repelRadius - dist) / repelRadius;
+                        const angle = Math.atan2(dot.baseY - state.mouseY, dot.baseX - state.mouseX);
+                        let targetX = dot.baseX + Math.cos(angle) * force * 50; 
+                        let targetY = dot.baseY + Math.sin(angle) * force * 50;
+                        dot.x += (targetX - dot.x) * 0.2;
+                        dot.y += (targetY - dot.y) * 0.2;
+
+                        if (isDarkMode) {
+                            ctx.shadowBlur = 10 + (force * 20); // Gets brighter the harder it's pushed
+                            ctx.shadowColor = `rgba(180, 230, 255, ${0.4 + force})`;
+                            drawColor = `rgba(255, 255, 255, ${0.5 + force})`; 
+                        } else {
+                            ctx.shadowBlur = 0;
+                            drawColor = `rgba(0, 0, 0, ${0.85 + (force * 0.15)})`; // Deep ink
+                        }
+                    } else {
+                        // Spring back to original position
+                        dot.x += (dot.baseX - dot.x) * 0.15;
+                        dot.y += (dot.baseY - dot.y) * 0.15;
+
+                        if (isDarkMode) {
+                            ctx.shadowBlur = 8; // Constant ambient glow
+                            ctx.shadowColor = `rgba(180, 230, 255, 0.2)`;
+                            drawColor = `rgba(255, 255, 255, 0.35)`; 
+                        } else {
+                            ctx.shadowBlur = 0;
+                            drawColor = `rgba(0, 0, 0, 0.8)`; 
+                        }
+                    }
+
+                    // Draw dot. Size is fixed at 1.2 (reduced 20% from 1.5)
+                    ctx.beginPath();
+                    ctx.arc(dot.x, dot.y, 1.2, 0, Math.PI * 2); 
+                    ctx.fillStyle = drawColor;
+                    ctx.fill();
+                
+                } else if (mode === 'off') {
+                    // Turn off all effects. Just draw tiny, faint static dots.
+                    ctx.shadowBlur = 0;
+                    dot.x += (dot.baseX - dot.x) * 0.1;
+                    dot.y += (dot.baseY - dot.y) * 0.1;
+                    ctx.beginPath();
+                    ctx.arc(dot.x, dot.y, 0.4, 0, Math.PI * 2); // Reduced 20% from 0.5
+                    ctx.fillStyle = isDarkMode ? `rgba(255, 255, 255, 0.05)` : `rgba(0, 0, 0, 0.2)`; 
+                    ctx.fill();
+                }
+            });
+
+            ctx.shadowBlur = 0; // Turn off shadows so eyes aren't affected
+
+            // --- Animate the Eyes ---
+            const eyes = document.querySelectorAll('.eye');
+            eyes.forEach(eye => {
+                const pupil = eye.querySelector('.pupil');
+                const innerDot = eye.querySelector('.inner-dot');
+                
+                // Get exact center of the eye circle
+                const rect = eye.getBoundingClientRect();
+                const eyeCenterX = rect.left + rect.width / 2;
+                const eyeCenterY = rect.top + rect.height / 2;
+                
+                // Max travel limits so pupil doesn't leave the eye
+                const maxDistancePupil = (rect.width / 2) - 55; 
+                const maxDistanceInner = 20;
+
+                let finalPupilX = 0, finalPupilY = 0;
+                let finalInnerX = 0, finalInnerY = 0;
+
+                // Center logic: If hovering over button OR user clicked to lock it
+                if (state.isLockedAtCenter || state.isHoveringMainButton) {
+                    // Creates a tiny, constant "wobble" instead of sitting perfectly still
+                    const time = Date.now() * 0.005;
+                    finalPupilX = Math.sin(time) * 8; 
+                    finalPupilY = Math.cos(time * 1.3) * 8; 
+                    finalInnerX = Math.sin(time * 1.5) * 4;
+                    finalInnerY = Math.cos(time) * 4;
+                } else {
+                    // Tracking Logic: Calculate angle from eye to mouse cursor
+                    const dx = state.mouseX - eyeCenterX;
+                    const dy = state.mouseY - eyeCenterY;
+                    const angle = Math.atan2(dy, dx);
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+
+                    // Move Main Pupil
+                    let distPupil = distance > maxDistancePupil ? maxDistancePupil : distance;
+                    finalPupilX = Math.cos(angle) * distPupil;
+                    finalPupilY = Math.sin(angle) * distPupil;
+
+                    // Move Inner Dot further towards edge for 3D/Parallax effect
+                    let distInner = distance * 0.1; 
+                    if (distInner > maxDistanceInner) distInner = maxDistanceInner;
+                    finalInnerX = Math.cos(angle) * distInner;
+                    finalInnerY = Math.sin(angle) * distInner;
+                }
+
+                // Apply calculations to CSS to physically move the HTML elements
+                pupil.style.transform = `translate(${finalPupilX}px, ${finalPupilY}px)`;
+                innerDot.style.transform = `translate(${finalInnerX}px, ${finalInnerY}px)`;
+            });
+
+            requestAnimationFrame(animate); // Loop function forever
+        }
+
+        // --- 6. Event Listeners (User Interaction) ---
+        
+        // Track mouse position everywhere on the screen
+        window.addEventListener('mousemove', (e) => {
+            state.mouseX = e.clientX;
+            state.mouseY = e.clientY;
+        });
+
+        // HOVER behavior: Mouse enters/leaves the main button
+        cursorEyeBtn.addEventListener('mouseenter', () => {
+            state.isHoveringMainButton = true;
+        });
+        cursorEyeBtn.addEventListener('mouseleave', () => {
+            state.isHoveringMainButton = false;
+        });
+
+        // CLICK behavior: Lock eye in center if button is clicked
+        cursorEyeBtn.addEventListener('click', (e) => {
+            state.isLockedAtCenter = true;
+            e.stopPropagation(); // Stops the window click event below from instantly unlocking it
+        });
+
+        // UNLOCK behavior: Click anywhere else on screen to release lock
+        window.addEventListener('click', (e) => {
+            if (!cursorEyeBtn.contains(e.target)) {
+                state.isLockedAtCenter = false;
+            }
+        });
+
+        // Number of eyes toggle
+        btnOneEye.addEventListener('click', () => { state.eyesCount = 1; renderEyes(); });
+        btnTwoEyes.addEventListener('click', () => { state.eyesCount = 2; renderEyes(); });
+
+        // Cycle Theme
+        btnTheme.addEventListener('click', () => {
+            document.body.classList.remove(state.themes[state.themeIndex]);
+            state.themeIndex = (state.themeIndex + 1) % state.themes.length;
+            document.body.classList.add(state.themes[state.themeIndex]);
+        });
+
+        // Cycle Animation Mode
+        btnAnim.addEventListener('click', () => {
+            state.animIndex = (state.animIndex + 1) % state.animModes.length;
+            const nextMode = state.animModes[state.animIndex];
+            
+            // Update tooltip text
+            let tooltipText = 'Mode: ';
+            if (nextMode === 'glow') tooltipText += 'Glow';
+            if (nextMode === 'repel') tooltipText += 'Repel';
+            if (nextMode === 'off') tooltipText += 'Off';
+            
+            btnAnim.setAttribute('data-tooltip', tooltipText);
+        });
+
+        // Toggle Grid vs Random Pattern
+        btnPattern.addEventListener('click', () => {
+            state.dotPattern = state.dotPattern === 'grid' ? 'random' : 'grid';
+            btnPattern.setAttribute('data-tooltip', 'Pattern: ' + (state.dotPattern === 'grid' ? 'Grid' : 'Stars'));
+            initDots(); // Redraws dots instantly in new pattern
+        });
+
+        // Toggle Sound On/Off
+        btnSound.addEventListener('click', () => {
+            state.soundEnabled = !state.soundEnabled;
+            if (state.soundEnabled) {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                iconSoundOff.style.display = 'none';
+                iconSoundOn.style.display = 'block';
+                btnSound.setAttribute('data-tooltip', 'Sound is ON');
+            } else {
+                iconSoundOff.style.display = 'block';
+                iconSoundOn.style.display = 'none';
+                btnSound.setAttribute('data-tooltip', 'Sound is OFF');
+            }
+        });
+
+        // --- Start Application ---
+        renderEyes(); // Build first eye
+        animate();    // Start graphics loop
+    </script>
+</body>
+</html>
